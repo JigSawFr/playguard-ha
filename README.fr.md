@@ -8,6 +8,9 @@
 
 [English](README.md) · **Français**
 
+[![Ouvrez votre instance Home Assistant et ouvrez un dépôt dans le Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=JigSawFr&repository=playguard-ha&category=integration)
+[![Ouvrez votre instance Home Assistant et commencez à configurer une nouvelle intégration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=playguard)
+
 Une intégration Home Assistant pour [PlayGuard](https://github.com/JigSawFr/PlayGuard),
 le homebrew Nintendo Switch qui gère le contrôle parental de la console hors
 ligne : limites de temps de jeu, heure du coucher, restrictions, temps en plus,
@@ -103,7 +106,11 @@ publie elle-même la découverte MQTT de Home Assistant. L'intégration ajoute :
 Avec [HACS](https://hacs.xyz/) :
 
 1. *HACS › ⋮ › Dépôts personnalisés* : ajoutez
-   `https://github.com/JigSawFr/playguard-ha`, type *Intégration*.
+   `https://github.com/JigSawFr/playguard-ha`, type *Intégration* ; ou le
+   premier bouton en haut de cette page (My Home Assistant ouvre le dépôt dans
+   votre HACS). Dans PlayGuard, *Accès à distance › Home Assistant ›
+   Installer l'intégration Home Assistant* affiche les deux mêmes boutons en
+   QR codes, pour un téléphone.
 2. Ouvrez **PlayGuard** dans HACS, puis *Télécharger* : HACS installe le
    `playguard.zip` de la version que vous choisissez.
 3. Redémarrez Home Assistant.
@@ -221,6 +228,31 @@ tout), *Exporter un rapport de diagnostic*.
 
 **Événement** : *Événements*, voir [événements](#événements).
 
+**La console elle-même** (`playguard/<id>/system`, tenu à jour par l'agent
+quand PlayGuard est fermé) :
+
+| Entité | Ce qu'elle indique | Notes |
+|---|---|---|
+| Batterie, En charge, Sur le dock | Sa charge, si un chargeur l'alimente, si elle est sur le dock. | |
+| Espace libre de la carte SD, Espace libre du stockage interne | Mio restants sur la carte SD et sur le stockage utilisateur du système (celui de l'emuMMC sur un emuMMC). | lus toutes les 5 minutes ; leurs tailles sont de diagnostic |
+| Modèle | Switch (2017), Switch (2019), Switch Lite, Switch OLED. | diagnostic |
+| Surnom de la console, Région, Système, hekate | Le surnom des Paramètres de la console, la région, sysMMC ou emuMMC, hekate sur la carte SD. | diagnostic |
+| PRODINFO masqué | Atmosphère cache l'identité de la console. | diagnostic |
+| Température, Connexion, Adresse IP, Signal Wi-Fi | Le capteur interne, Wi-Fi ou ethernet, l'adresse de la console, 0 à 3 barres. | diagnostic |
+| Dernier démarrage | Quand la console a démarré (pas quand elle est sortie de veille). | diagnostic |
+| Numéro de série | Le vrai numéro de série de la console (tiré de la sauvegarde d'Atmosphère quand le PRODINFO est masqué). | diagnostic, désactivé par défaut ; seulement avec *Publier le numéro de série* sur la console |
+| Réseau Wi-Fi | Le nom du réseau. | diagnostic, désactivé par défaut |
+
+**Jeux** (`playguard/<id>/games`, que PlayGuard publie après chaque lecture
+du journal de jeu) : *Jeux installés*, *Temps de jeu (depuis toujours)* (tous
+les jeux, tous les comptes), *Comptes utilisateurs* (diagnostic) ; et **un
+capteur par jeu**, *Temps de jeu · <jeu>* : ses minutes depuis sa première
+partie (un total croissant, pour les statistiques à long terme), avec les
+attributs `installed`, `version`, `launches`, `first_played`, `last_played`.
+Le capteur d'un jeu apparaît quand la console le liste pour la première fois,
+et reste quand le jeu est désinstallé (avec `installed: false`) ; celui d'un
+jeu que la console ne liste plus est indisponible.
+
 Les entités qui changent le minuteur (limites, heure du coucher, temps en plus,
 verrouillage de la console, profils) demandent *Les ordres peuvent changer le
 temps de jeu* activé sur la console ; sans lui, elles sont refusées ici avec la
@@ -296,6 +328,13 @@ qu'écouter.
   journée la remplace.
 - Les **ordres** sont retenus jusqu'à ce que la console les traite ; elle les
   efface alors, publie un événement et son nouvel état.
+- **La version de l'intégration** : à chaque configuration de l'entrée d'une
+  console (donc à chaque démarrage de Home Assistant), l'intégration publie
+  sa version et celle de Home Assistant, retenues, sur
+  `playguard/<id>/integration`. PlayGuard l'affiche dans *Accès à distance ›
+  Home Assistant* et, quand il cherche les mises à jour, signale dans ses
+  notifications qu'une nouvelle version de l'intégration est sortie, avec ce
+  qui change et le QR code qui l'ouvre dans HACS.
 
 ## Exemples
 
@@ -525,8 +564,10 @@ et le dernier rapport de la console, sans les noms) et ouvrez un
 1. *Paramètres › Appareils et services › PlayGuard*, puis pour chaque console
    *⋮ › Supprimer*. Supprimer l'entrée d'une console demande à la console de
    publier de nouveau son propre appareil Home Assistant (une console en veille
-   le fait quand elle sort de veille) ; pour vous en passer, désactivez *Créer
-   l'appareil dans Home Assistant* dans PlayGuard.
+   le fait quand elle sort de veille), et efface la version de l'intégration
+   sur le broker (PlayGuard ne signale plus ses nouvelles versions) ; pour vous
+   passer de l'appareil de la console, désactivez *Créer l'appareil dans Home
+   Assistant* dans PlayGuard.
 2. Avec HACS : *HACS › PlayGuard › ⋮ › Désinstaller* ; à la main : supprimez
    `custom_components/playguard`. Redémarrez Home Assistant.
 3. Les statistiques à long terme restent dans l'enregistreur : supprimez-les
@@ -538,11 +579,11 @@ distance* dans PlayGuard.
 
 ## Ce qu'elle fait sur le broker
 
-Elle lit `playguard/<id>/state`, `availability`, `activity`,
+Elle lit `playguard/<id>/state`, `system`, `games`, `availability`, `activity`,
 `activity/<date>`, `names`, `week`, `event` et `report`, et publie les mêmes
 ordres scalaires retenus que les entités natives sur
-`playguard/<id>/<entity>/set` (la console efface chacun une fois traité). Le
-contrat est le
+`playguard/<id>/<entity>/set` (la console efface chacun une fois traité), et
+sa version, retenue, sur `playguard/<id>/integration`. Le contrat est le
 [`docs/sync-protocol.md`](https://github.com/JigSawFr/PlayGuard/blob/main/docs/sync-protocol.md)
 de PlayGuard (en anglais).
 
